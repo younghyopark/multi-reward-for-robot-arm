@@ -116,7 +116,10 @@ class ddpg_agent:
             if MPI.COMM_WORLD.Get_rank() == 0:
                 print('[{}] epoch is: {}, eval success rate is: {:.3f}'.format(datetime.now(), epoch, success_rate))
                 torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
-                            self.model_path + '/model.pt')
+                            self.model_path + '/model_{}_{}.pt'.format(self.args.run_name,epoch))
+
+        torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
+                            self.model_path + '/model_{}.pt'.format(self.args.run_name))
 
     # pre_process the inputs
     def _preproc_inputs(self, obs, g):
@@ -211,8 +214,8 @@ class ddpg_agent:
             actions_next = self.actor_target_network(inputs_next_norm_tensor)
             q_next_value = self.critic_target_network(inputs_next_norm_tensor, actions_next)
             q_next_value = q_next_value.detach()
-#             print('r_tensor_shape :', r_tensor.shape)
-#             print('q_next_value :', q_next_value.shape)
+            # print('r_tensor_shape :', r_tensor.shape)
+            # print('q_next_value :', q_next_value.shape)
             target_q_value = r_tensor + self.args.gamma * q_next_value
             target_q_value = target_q_value.detach()
             # clip the q value

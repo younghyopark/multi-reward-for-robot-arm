@@ -34,7 +34,8 @@ def get_args():
     parser.add_argument('--demo-length', type=int, default=20, help='the demo length')
     parser.add_argument('--cuda', action='store_true', help='if use gpu do the acceleration')
     parser.add_argument('--num-rollouts-per-mpi', type=int, default=2, help='the rollouts per mpi')
-
+    parser.add_argument('--run-name', type=str, default=None, help='the environment name')
+    parser.add_argument('--demo-epoch', type=int, default=0, help='the environment name')
     args = parser.parse_args()
 
     return args

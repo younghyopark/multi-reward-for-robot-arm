@@ -17,7 +17,14 @@ def process_inputs(o, g, o_mean, o_std, g_mean, g_std, args):
 if __name__ == '__main__':
     args = get_args()
     # load the model param
-    model_path = args.save_dir + args.env_name + '/model.pt'
+    if args.run_name is None:
+        model_path = args.save_dir + args.env_name + '/model.pt'
+    else:
+        if args.demo_epoch==0:
+            model_path = args.save_dir + args.env_name + '/model_{}.pt'.format(args.run_name)
+        else:
+            model_path = args.save_dir + args.env_name + '/model_{}_{}.pt'.format(args.run_name, args.demo_epoch)
+        
     o_mean, o_std, g_mean, g_std, model = torch.load(model_path, map_location=lambda storage, loc: storage)
     # create the environment
     env = gym.make('gym_multiRL:MultiRL{}'.format(args.env_name))
