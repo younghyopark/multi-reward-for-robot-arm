@@ -34,7 +34,7 @@ class critic(nn.Module):
         self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, 256)
         self.intermediate_q_out = nn.Linear(256, self.num_reward)
-        self.q_out = nn.Linear(self.num_reward, 1, bias=False)
+#         self.q_out = nn.Linear(self.num_reward, 1, bias=False)
 
     def forward(self, x, actions):
         x = torch.cat([x, actions / self.max_action], dim=1)
@@ -42,9 +42,9 @@ class critic(nn.Module):
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))
         x = self.intermediate_q_out(x)
-        q_value = self.q_out(x)
+#         q_value = self.q_out(x)
 
-        return q_value
+        return x#q_value
 
     def multi_qvalues(self, x, actions):
         x = torch.cat([x, actions / self.max_action], dim=1)

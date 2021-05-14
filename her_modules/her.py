@@ -18,6 +18,11 @@ class her_sampler:
         episode_idxs = np.random.randint(0, rollout_batch_size, batch_size)
         t_samples = np.random.randint(T, size=batch_size)
         transitions = {key: episode_batch[key][episode_idxs, t_samples].copy() for key in episode_batch.keys()}
+#         for k in transitions.keys():
+#             print('**')
+#             print(k)
+#             print(transitions[k].shape)
+
         # her idx
         her_indexes = np.where(np.random.uniform(size=batch_size) < self.future_p)
         future_offset = np.random.uniform(size=batch_size) * (T - t_samples)
@@ -27,8 +32,13 @@ class her_sampler:
         future_ag = episode_batch['ag'][episode_idxs[her_indexes], future_t]
         transitions['g'][her_indexes] = future_ag
         # to get the params to re-compute reward
-        print(self.reward_func(transitions['ag_next'], transitions['g'],None).shape)
-        transitions['r'] = np.expand_dims(self.reward_func(transitions['ag_next'], transitions['g'], None), 1)
+#         print(self.reward_func(transitions['ag_next'], transitions['g'],None).shape)
+        transitions['r'] = np.expand_dims(self.reward_func(transitions['ag_next'], transitions['g'], None), axis=1)
+#         for k in transitions.keys():
+#             print('**')
+#             print(k)
+#             print(transitions[k].shape)
+#             print(*transitions[k].shape)
         transitions = {k: transitions[k].reshape(batch_size, *transitions[k].shape[1:]) for k in transitions.keys()}
 
         return transitions

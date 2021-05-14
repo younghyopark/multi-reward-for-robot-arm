@@ -7,8 +7,8 @@ from rl_modules.ddpg_agent import ddpg_agent
 import random
 import torch
 
-import register
-from registration import make
+# import register
+# from registration import make
 
 
 """
@@ -22,14 +22,14 @@ def get_env_params(env):
             'goal': obs['desired_goal'].shape[0],
             'action': env.action_space.shape[0],
             'action_max': env.action_space.high[0],
-            'num_reward':
+            'num_reward':env.num_reward
             }
     params['max_timesteps'] = env._max_episode_steps
     return params
 
 def launch(args):
     # create the ddpg_agent
-    env = make(args.env_name)
+    env = gym.make('gym_multiRL:MultiRL{}'.format(args.env_name))
     # set random seeds for reproduce
     env.seed(args.seed + MPI.COMM_WORLD.Get_rank())
     random.seed(args.seed + MPI.COMM_WORLD.Get_rank())

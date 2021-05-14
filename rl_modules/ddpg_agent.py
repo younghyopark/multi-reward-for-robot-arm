@@ -8,7 +8,7 @@ from rl_modules.replay_buffer import replay_buffer
 from rl_modules.models import actor, critic
 from mpi_utils.normalizer import normalizer
 from her_modules.her import her_sampler
-
+from tqdm import trange
 """
 ddpg with HER (MPI-version)
 
@@ -61,8 +61,9 @@ class ddpg_agent:
 
         """
         # start to collect samples
-        for epoch in range(self.args.n_epochs):
-            for _ in range(self.args.n_cycles):
+        for epoch in trange(self.args.n_epochs):
+            print('starting {}th epoch training'.format(epoch))
+            for _ in trange(self.args.n_cycles):
                 mb_obs, mb_ag, mb_g, mb_actions = [], [], [], []
                 for _ in range(self.args.num_rollouts_per_mpi):
                     # reset the rollouts
@@ -196,7 +197,8 @@ class ddpg_agent:
         inputs_norm_tensor = torch.tensor(inputs_norm, dtype=torch.float32)
         inputs_next_norm_tensor = torch.tensor(inputs_next_norm, dtype=torch.float32)
         actions_tensor = torch.tensor(transitions['actions'], dtype=torch.float32)
-        r_tensor = torch.tensor(transitions['r'], dtype=torch.float32) 
+        r_tensor = torch.tensor(transitions['r'], dtype=torch.float32).reshape(transitions['r'].shape[0],-1)
+#         print(r_tensor.shape)
         if self.args.cuda:
             inputs_norm_tensor = inputs_norm_tensor.cuda()
             inputs_next_norm_tensor = inputs_next_norm_tensor.cuda()
@@ -209,6 +211,8 @@ class ddpg_agent:
             actions_next = self.actor_target_network(inputs_next_norm_tensor)
             q_next_value = self.critic_target_network(inputs_next_norm_tensor, actions_next)
             q_next_value = q_next_value.detach()
+#             print('r_tensor_shape :', r_tensor.shape)
+#             print('q_next_value :', q_next_value.shape)
             target_q_value = r_tensor + self.args.gamma * q_next_value
             target_q_value = target_q_value.detach()
             # clip the q value
@@ -216,7 +220,10 @@ class ddpg_agent:
             target_q_value = torch.clamp(target_q_value, -clip_return, 0)
         # the q loss
         real_q_value = self.critic_network(inputs_norm_tensor, actions_tensor)
+#         print('target_q_value :', target_q_value.shape)
+#         print('real_q_value :', real_q_value.shape)
         critic_loss = (target_q_value - real_q_value).pow(2).mean()
+#         print('critic_loss :',critic_loss.shape)
         # the actor loss
         actions_real = self.actor_network(inputs_norm_tensor)
         actor_loss = -self.critic_network(inputs_norm_tensor, actions_real).mean()
