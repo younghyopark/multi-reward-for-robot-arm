@@ -7,6 +7,10 @@ from rl_modules.ddpg_agent import ddpg_agent
 import random
 import torch
 
+import register
+from registration import make
+
+
 """
 train the agent, the MPI part code is copy from openai baselines(https://github.com/openai/baselines/blob/master/baselines/her)
 
@@ -18,13 +22,14 @@ def get_env_params(env):
             'goal': obs['desired_goal'].shape[0],
             'action': env.action_space.shape[0],
             'action_max': env.action_space.high[0],
+            'num_reward':
             }
     params['max_timesteps'] = env._max_episode_steps
     return params
 
 def launch(args):
     # create the ddpg_agent
-    env = gym.make(args.env_name)
+    env = make(args.env_name)
     # set random seeds for reproduce
     env.seed(args.seed + MPI.COMM_WORLD.Get_rank())
     random.seed(args.seed + MPI.COMM_WORLD.Get_rank())

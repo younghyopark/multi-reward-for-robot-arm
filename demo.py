@@ -20,7 +20,7 @@ if __name__ == '__main__':
     model_path = args.save_dir + args.env_name + '/model.pt'
     o_mean, o_std, g_mean, g_std, model = torch.load(model_path, map_location=lambda storage, loc: storage)
     # create the environment
-    env = gym.make(args.env_name)
+    env = gym.make('gym_multiRL:MultiRL{}'.format(args.env_name))
     # get the env param
     observation = env.reset()
     # get the environment params
@@ -28,6 +28,7 @@ if __name__ == '__main__':
                   'goal': observation['desired_goal'].shape[0], 
                   'action': env.action_space.shape[0], 
                   'action_max': env.action_space.high[0],
+                  'num_reward':env.num_reward
                   }
     # create the actor network
     actor_network = actor(env_params)
