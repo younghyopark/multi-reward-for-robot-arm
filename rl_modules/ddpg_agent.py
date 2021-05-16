@@ -224,8 +224,13 @@ class ddpg_agent:
         # the q loss
         real_q_value = self.critic_network(inputs_norm_tensor, actions_tensor)
 #         print('target_q_value :', target_q_value.shape)
-#         print('real_q_value :', real_q_value.shape)
+#       
+        #  print('real_q_value :', real_q_value.shape)
+        # print((target_q_value - real_q_value).shape)
+        # print(( (target_q_value - real_q_value).pow(2)).shape)
+        # print((target_q_value - real_q_value).pow(2).mean().shape)
         critic_loss = (target_q_value - real_q_value).pow(2).mean()
+
 #         print('critic_loss :',critic_loss.shape)
         # the actor loss
         actions_real = self.actor_network(inputs_norm_tensor)
