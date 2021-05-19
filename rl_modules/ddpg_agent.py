@@ -9,6 +9,8 @@ from rl_modules.models import actor, critic
 from mpi_utils.normalizer import normalizer
 from her_modules.her import her_sampler
 from tqdm import trange
+from tensorboardX import SummaryWriter
+
 """
 ddpg with HER (MPI-version)
 
@@ -54,6 +56,12 @@ class ddpg_agent:
             self.model_path = os.path.join(self.args.save_dir, self.args.env_name)
             if not os.path.exists(self.model_path):
                 os.mkdir(self.model_path)
+
+            self.result_dir = f'./learning_curves/{args.env_name}/{self.args.run_name}'
+            if not os.path.isdir(self.result_dir):
+                os.makedirs(self.result_dir, exist_ok=True)
+                print(f'creating {self.result_dir}')
+            self.writer = SummaryWriter(logdir=self.result_dir)
 
     def learn(self):
         """
@@ -117,9 +125,13 @@ class ddpg_agent:
                 print('[{}] epoch is: {}, eval success rate is: {:.3f}'.format(datetime.now(), epoch, success_rate))
                 torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
                             self.model_path + '/model_{}_{}.pt'.format(self.args.run_name,epoch))
+                
+                self.writer.add_scalar('success_rate', success_rate,epoch)
 
-        torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
-                            self.model_path + '/model_{}.pt'.format(self.args.run_name))
+
+
+        # torch.save([self.o_norm.mean, self.o_norm.std, self.g_norm.mean, self.g_norm.std, self.actor_network.state_dict()], \
+        #                     self.model_path + '/model_{}.pt'.format(self.args.run_name))
 
     # pre_process the inputs
     def _preproc_inputs(self, obs, g):
@@ -261,7 +273,7 @@ class ddpg_agent:
                     pi = self.actor_network(input_tensor)
                     # convert the actions
                     actions = pi.detach().cpu().numpy().squeeze()
-                observation_new, _, _, info = self.env.step(actions)
+                observation_new, reward_new, _, info = self.env.step(actions)
                 obs = observation_new['observation']
                 g = observation_new['desired_goal']
                 per_success_rate.append(info['is_success'])
