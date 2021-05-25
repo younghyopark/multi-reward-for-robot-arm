@@ -234,28 +234,40 @@ class ddpg_agent:
             clip_return = 1 / (1 - self.args.gamma)
             target_q_value = torch.clamp(target_q_value, -clip_return, 0)
         # the q loss
+        # if self.args.ddpg_vq_version=='ver3':
+        #     real_q_value = self.critic_network.deep_forward(inputs_norm_tensor, actions_tensor)
+        # else:
         real_q_value = self.critic_network(inputs_norm_tensor, actions_tensor)
-#         print('target_q_value :', target_q_value.shape)
-#       
-        #  print('real_q_value :', real_q_value.shape)
+
+        # print('target_q_value :', target_q_value.shape)
+        # print('real_q_value :', real_q_value.shape)
         # print((target_q_value - real_q_value).shape)
         # print(( (target_q_value - real_q_value).pow(2)).shape)
         # print((target_q_value - real_q_value).pow(2).mean().shape)
-        if self.args.critic_loss_type=='default':
+        if self.args.critic_loss_type=='MSE':
             critic_loss = (target_q_value - real_q_value).pow(2).mean()
-        elif self.args.critic_loss_type=='max':
-            critic_loss, _ = torch.max((target_q_value - real_q_value).pow(2),dim=1)
-            critic_loss = torch.mean(critic_loss)
+        # elif self.args.critic_loss_type=='max':
+        #     critic_loss, _ = torch.max((target_q_value - real_q_value).pow(2),dim=1)
+        #     critic_loss = torch.mean(critic_loss)
+        elif self.args.critic_loss_type=='MAE':
+            critic_loss = (target_q_value - real_q_value).abs().mean()
+
             # print(critic_loss.shape)
             # .mean()
 
 #         print('critic_loss :',critic_loss.shape)
         # the actor loss
         actions_real = self.actor_network(inputs_norm_tensor)
+
+        # if self.args.ddpg_vq_version=='ver3':
+        #     actor_loss_pre = self.critic_network.deep_forward(inputs_norm_tensor, actions_real)   # map it to singlular vector
+        # else:
+        # actor_loss_pre = 
+
         if self.args.actor_loss_type=='default':
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real)).mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
-        if self.args.actor_loss_type=='min':
+        elif self.args.actor_loss_type=='min':
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real)).min(axis=1)[0].mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         
