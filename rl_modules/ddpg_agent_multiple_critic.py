@@ -10,7 +10,6 @@ from mpi_utils.normalizer import normalizer
 from her_modules.her import her_sampler
 from tqdm import trange
 from tensorboardX import SummaryWriter
-import torch.nn.functional as F
 
 """
 ddpg with HER (MPI-version)
@@ -22,30 +21,40 @@ class ddpg_agent:
         self.env = env
         self.env_params = env_params
         # create the network
+
         self.actor_network = actor(env_params)
-        self.critic_network = critic(env_params)
-        # sync the networks across the cpus
         sync_networks(self.actor_network)
-        sync_networks(self.critic_network)
+
+        self.critic_network = dict()
+        for i in range(self.env.num_reward):
+            self.critic_network[i] = critic(env_params)
+
+            # sync the networks across the cpus
+            sync_networks(self.critic_network[i])
+
         # build up the target network
-        self.actor_target_network = actor(env_params)
-        self.critic_target_network = critic(env_params)
-        # load the weights into the target networks
+        self.actor_target_network=actor(env_params)
         self.actor_target_network.load_state_dict(self.actor_network.state_dict())
-        self.critic_target_network.load_state_dict(self.critic_network.state_dict())
+
+        self.critic_target_network = dict()
+        for i in range(self.env.num_reward):
+            self.critic_target_network[i] = critic(env_params)
+
+            # load the weights into the target networks
+            self.critic_target_network[i].load_state_dict(self.critic_network[i].state_dict())
         # if use gpu
         if self.args.cuda:
             self.actor_network.cuda()
-            self.critic_network.cuda()
             self.actor_target_network.cuda()
-            self.critic_target_network.cuda()
+            for i in range(self.env.num_reward):
+                self.critic_network[i].cuda()
+                self.critic_target_network[i].cuda()
         # create the optimizer
-        if self.args.optimizer_type =='SGD':
-            self.actor_optim = torch.optim.SGD(self.actor_network.parameters(), lr=self.args.lr_actor)
-            self.critic_optim = torch.optim.SGD(self.critic_network.parameters(), lr=self.args.lr_critic)
-        elif self.args.optimizer_type =='adam':
-            self.actor_optim = torch.optim.Adam(self.actor_network.parameters(), lr=self.args.lr_actor)
-            self.critic_optim = torch.optim.Adam(self.critic_network.parameters(), lr=self.args.lr_critic)
+        self.actor_optim = torch.optim.Adam(self.actor_network.parameters(), lr=self.args.lr_actor)
+        self.critic_optim = dict()
+        for i in range(self.env.num_reward):
+            
+            self.critic_optim[i] = torch.optim.Adam(self.critic_network[i].parameters(), lr=self.args.lr_critic)
         # her sampler
         self.her_module = her_sampler(self.args.replay_strategy, self.args.replay_k, self.env.compute_reward)
         # create the replay buffer
@@ -54,7 +63,12 @@ class ddpg_agent:
         self.o_norm = normalizer(size=env_params['obs'], default_clip_range=self.args.clip_range)
         self.g_norm = normalizer(size=env_params['goal'], default_clip_range=self.args.clip_range)
         # create the dict for store the model
-        if MPI.COMM_WORLD.Get_rank() == 0:
+        print(MPI.COMM_WORLD.Get_rank())
+        # self.defined=False
+
+        # while self.defined==False:
+        if MPI.COMM_WORLD.Get_rank()==0:
+            
             if not os.path.exists(self.args.save_dir):
                 os.mkdir(self.args.save_dir)
             # path to save the model
@@ -68,6 +82,9 @@ class ddpg_agent:
                 print(f'creating {self.result_dir}')
             self.writer = SummaryWriter(logdir=self.result_dir)
 
+            # self.defined=True
+
+
     def learn(self):
         """
         train the network
@@ -75,7 +92,6 @@ class ddpg_agent:
         """
         # start to collect samples
         for epoch in trange(self.args.n_epochs):
-            updated_index_histogram = np.zeros(self.env.num_reward)
             print('starting {}th epoch training'.format(epoch))
             for _ in trange(self.args.n_cycles):
                 mb_obs, mb_ag, mb_g, mb_actions = [], [], [], []
@@ -121,11 +137,11 @@ class ddpg_agent:
                 self._update_normalizer([mb_obs, mb_ag, mb_g, mb_actions])
                 for _ in range(self.args.n_batches):
                     # train the network
-                    updated_index = self._update_network()
-                    updated_index_histogram[int(updated_index)]+=1
+                    self._update_network()
                 # soft update
                 self._soft_update_target_network(self.actor_target_network, self.actor_network)
-                self._soft_update_target_network(self.critic_target_network, self.critic_network)
+                for i in range(self.env.num_reward):
+                    self._soft_update_target_network(self.critic_target_network[i], self.critic_network[i])
             # start to do the evaluation
             success_rate, reward_components = self._eval_agent()
             if MPI.COMM_WORLD.Get_rank() == 0:
@@ -137,7 +153,6 @@ class ddpg_agent:
 
                 for i in range(self.env.num_reward):
                     self.writer.add_scalar('rewards/number_{}'.format(i), reward_components[i],epoch)
-                    self.writer.add_scalar('num_updated/number_{}'.format(i), updated_index_histogram[i],epoch)
 
 
 
@@ -223,57 +238,65 @@ class ddpg_agent:
         inputs_norm_tensor = torch.tensor(inputs_norm, dtype=torch.float32)
         inputs_next_norm_tensor = torch.tensor(inputs_next_norm, dtype=torch.float32)
         actions_tensor = torch.tensor(transitions['actions'], dtype=torch.float32)
-        r_tensor = torch.tensor(transitions['r'], dtype=torch.float32).reshape(transitions['r'].shape[0],-1)
-#         print(r_tensor.shape)
-        if self.args.cuda:
-            inputs_norm_tensor = inputs_norm_tensor.cuda()
-            inputs_next_norm_tensor = inputs_next_norm_tensor.cuda()
-            actions_tensor = actions_tensor.cuda()
-            r_tensor = r_tensor.cuda()
-        # calculate the target Q value function
-        with torch.no_grad():
-            # do the normalization
-            # concatenate the stuffs
-            actions_next = self.actor_target_network(inputs_next_norm_tensor)
-            q_next_value = self.critic_target_network(inputs_next_norm_tensor, actions_next)
-            q_next_value = q_next_value.detach()
-            # print('r_tensor_shape :', r_tensor.shape)
-            # print('q_next_value :', q_next_value.shape)
-            target_q_value = r_tensor + self.args.gamma * q_next_value
-            target_q_value = target_q_value.detach()
-            # clip the q value
-            clip_return = 1 / (1 - self.args.gamma)
-            target_q_value = torch.clamp(target_q_value, -clip_return, 0)
-        # the q loss
-        # if self.args.ddpg_vq_version=='ver3':
-        #     real_q_value = self.critic_network.deep_forward(inputs_norm_tensor, actions_tensor)
-        # else:
-        real_q_value = self.critic_network(inputs_norm_tensor, actions_tensor)
+        for i in range(self.env.num_reward):
+            r_tensor = torch.tensor(transitions['r'], dtype=torch.float32).reshape(transitions['r'].shape[0],-1)[:,i]
+            # print(r_tensor.shape)
+            if self.args.cuda:
+                inputs_norm_tensor = inputs_norm_tensor.cuda()
+                inputs_next_norm_tensor = inputs_next_norm_tensor.cuda()
+                actions_tensor = actions_tensor.cuda()
+                r_tensor = r_tensor.cuda()
+            # calculate the target Q value function
+            with torch.no_grad():
+                # do the normalization
+                # concatenate the stuffs
+                actions_next = self.actor_target_network(inputs_next_norm_tensor)
+                q_next_value = self.critic_target_network[i](inputs_next_norm_tensor, actions_next)
+                q_next_value = q_next_value.detach()
+                # print('r_tensor_shape :', r_tensor.shape)
+                # print('q_next_value :', q_next_value.shape)
+                target_q_value = r_tensor + self.args.gamma * q_next_value
+                target_q_value = target_q_value.detach()
+                # clip the q value
+                clip_return = 1 / (1 - self.args.gamma)
+                target_q_value = torch.clamp(target_q_value, -clip_return, 0)
+            # the q loss
+            # if self.args.ddpg_vq_version=='ver3':
+            #     real_q_value = self.critic_network.deep_forward(inputs_norm_tensor, actions_tensor)
+            # else:
+            real_q_value = self.critic_network[i](inputs_norm_tensor, actions_tensor)
 
-        # print('target_q_value :', target_q_value.shape)
-        # print('real_q_value :', real_q_value.shape)
-        # print((target_q_value - real_q_value).shape)
-        # print(( (target_q_value - real_q_value).pow(2)).shape)
-        # print((target_q_value - real_q_value).pow(2).mean().shape)
-        if self.args.critic_loss_type=='MSE':
-            critic_loss = (target_q_value - real_q_value).pow(2).mean()
-        # elif self.args.critic_loss_type=='max':
-        #     critic_loss, _ = torch.max((target_q_value - real_q_value).pow(2),dim=1)
-        #     critic_loss = torch.mean(critic_loss)
-        elif self.args.critic_loss_type=='MAE':
-            critic_loss = (target_q_value - real_q_value).abs().mean()
+            # print('target_q_value :', target_q_value.shape)
+            # print('real_q_value :', real_q_value.shape)
+            # print((target_q_value - real_q_value).shape)
+            # print(( (target_q_value - real_q_value).pow(2)).shape)
+            # print((target_q_value - real_q_value).pow(2).mean().shape)
+            if self.args.critic_loss_type=='MSE':
+                critic_loss = (target_q_value - real_q_value).pow(2).mean()
+            # elif self.args.critic_loss_type=='max':
+            #     critic_loss, _ = torch.max((target_q_value - real_q_value).pow(2),dim=1)
+            #     critic_loss = torch.mean(critic_loss)
+            elif self.args.critic_loss_type=='MAE':
+                critic_loss = (target_q_value - real_q_value).abs().mean()
 
-            # print(critic_loss.shape)
-            # .mean()
+                # print(critic_loss.shape)
+                # .mean()
+                        # update the critic_network
+            self.critic_optim[i].zero_grad()
+            critic_loss.backward()
+            sync_grads(self.critic_network[i])
+            self.critic_optim[i].step()
 
-#         print('critic_loss :',critic_loss.shape)
-        # the actor loss
+
+    #         print('critic_loss :',critic_loss.shape)
+            # the actor loss
         actions_real = self.actor_network(inputs_norm_tensor)
+        update_index_sampling_prob = []
+        for i in range(self.env.num_reward):
+            update_index_sampling_prob.append(self.critic_network[i](inputs_norm_tensor, actions_real).mean().data.cpu().numpy().item())
+        update_index_sampling_prob = torch.Tensor(np.array(update_index_sampling_prob))
+        update_index_sampling_prob = torch.nn.Softmin(dim=0)(update_index_sampling_prob/self.args.softmax_temperature).numpy()
 
-        # if self.args.ddpg_vq_version=='ver3':
-        #     actor_loss_pre = self.critic_network.deep_forward(inputs_norm_tensor, actions_real)   # map it to singlular vector
-        # else:
-        # actor_loss_pre = 
 
         if self.args.actor_loss_type=='default':
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real)).mean()
@@ -282,28 +305,26 @@ class ddpg_agent:
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real)).min(axis=1)[0].mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         elif self.args.actor_loss_type=='softmin':
-            actor_loss = -(self.critic_network.softmin_forward(inputs_norm_tensor, actions_real)).min(axis=1)[0].mean()
+            # print((self.critic_network.softmin_forward(inputs_norm_tensor, actions_real)).shape)
+            actor_loss = -(self.critic_network.softmin_forward(inputs_norm_tensor, actions_real)).mean()
+            # print(actor_loss.shape)
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         elif self.args.actor_loss_type=='random':
-            update_index_sampling_prob= F.softmin((self.critic_network(inputs_norm_tensor, actions_real)).mean(axis=0)/self.args.softmax_temperature, dim=0).detach().cpu().numpy()
-            
+            # print((self.critic_network.softmin_forward(inputs_norm_tensor, actions_real)).shape)
             update_index = np.random.choice(self.env.num_reward, p= update_index_sampling_prob)
-            actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real))[:,update_index].mean()
+            actor_loss = -(self.critic_network[update_index](inputs_norm_tensor, actions_real)).mean()
             # print(actor_loss)
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
-        
+            # print(actor_loss)
+            # for i in range(self.env.num_reward):
+            #     self.writer.add_scalar('update_probability/number_{}'.format(i), update_index_sampling_prob[i])
+
         # start to update the network
         self.actor_optim.zero_grad()
         actor_loss.backward()
         sync_grads(self.actor_network)
         self.actor_optim.step()
-        # update the critic_network
-        self.critic_optim.zero_grad()
-        critic_loss.backward()
-        sync_grads(self.critic_network)
-        self.critic_optim.step()
-    
-        return update_index
+
 
     # do the evaluation
     def _eval_agent(self):

@@ -38,6 +38,8 @@ def get_args():
     parser.add_argument('--demo-epoch', type=int, default=0, help='the environment name')
     parser.add_argument('--critic-loss-type','-crloss', type=str, default='MSE', help='the environment name')
     parser.add_argument('--actor-loss-type','-acloss', type=str, default='default', help='the environment name')
+    parser.add_argument('--softmax-temperature','-temp', type=float, default=1, help='the environment name')
+    parser.add_argument('--optimizer-type', type=str, default='adam', help='the environment name')
     # parser.add_argument('--ddpg_vq_version','-ver', type=str, default='ver1', help='the environment name')
     args = parser.parse_args()
 

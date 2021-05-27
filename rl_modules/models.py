@@ -16,6 +16,9 @@ class actor(nn.Module):
         self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, 256)
         self.action_out = nn.Linear(256, env_params['action'])
+        init = torch.rand(4)
+        # self.weights = nn.Parameter(init, requires_grad=True)
+        # self.softmax = nn.Softmax()
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -25,6 +28,8 @@ class actor(nn.Module):
 
         return actions
 
+
+
 class critic(nn.Module):
     def __init__(self, env_params):
         super(critic, self).__init__()
@@ -33,10 +38,13 @@ class critic(nn.Module):
         self.fc1 = nn.Linear(env_params['obs'] + env_params['goal'] + env_params['action'], 256)
         self.fc2 = nn.Linear(256, 256)
         self.fc3 = nn.Linear(256, 256)
+        # self.fc4 = nn.Linear(256, 256)
         self.intermediate_q_out = nn.Linear(256, self.num_reward)
+        self.softmin = nn.Softmin(dim=1)
         # self.out_fc1 = nn.Linear(self.num_reward, 1, bias=False)
         # self.out_fc2 = nn.Linear(64, 1)
         # self.out_fc3 = nn.Linear(64, 1)
+        self.temp = env_params['temp']
 
     def forward(self, x, actions):
         x = torch.cat([x, actions / self.max_action], dim=1)
@@ -47,6 +55,20 @@ class critic(nn.Module):
 #         q_value = self.q_out(x)
 
         return x#q_value
+
+    def softmin_forward(self, x, actions):
+        x = torch.cat([x, actions / self.max_action], dim=1)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = self.intermediate_q_out(x)
+        # print(x.shape)
+        y = self.softmin(x/self.temp)
+#         q_value = self.q_out(x)
+        # print(y.shape)
+        return (x*y).sum(axis=1)#q_value
+
+
 
     # def deep_forward(self, x, actions):
     #     x = torch.cat([x, actions / self.max_action], dim=1)
