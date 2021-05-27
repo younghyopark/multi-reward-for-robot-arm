@@ -137,7 +137,7 @@ class ddpg_agent:
 
                 for i in range(self.env.num_reward):
                     self.writer.add_scalar('rewards/number_{}'.format(i), reward_components[i],epoch)
-                    self.writer.add_scalar('num_updated/number_{}'.format(i), updated_index_histogram[i],epoch)
+                    self.writer.add_scalar('update_ratio_per_reward/number_{}'.format(i), updated_index_histogram[i]/updated_index_histogram.sum(),epoch)
 
 
 
