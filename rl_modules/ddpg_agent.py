@@ -270,26 +270,30 @@ class ddpg_agent:
         # the actor loss
         actions_real = self.actor_network(inputs_norm_tensor)
 
-        # if self.args.ddpg_vq_version=='ver3':
-        #     actor_loss_pre = self.critic_network.deep_forward(inputs_norm_tensor, actions_real)   # map it to singlular vector
-        # else:
-        # actor_loss_pre = 
-
         if self.args.actor_loss_type=='default':
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real)).mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         elif self.args.actor_loss_type=='min':
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real)).min(axis=1)[0].mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
+        elif self.args.actor_loss_type=='batch_min':
+            update_index = np.argmin((self.critic_network(inputs_norm_tensor, actions_real)).mean(axis=0))
+            actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real))[:,update_index].mean()
+            actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         elif self.args.actor_loss_type=='softmin':
             actor_loss = -(self.critic_network.softmin_forward(inputs_norm_tensor, actions_real)).min(axis=1)[0].mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
+        elif self.args.actor_loss_type=='strict_random':
+            update_index = np.random.choice(self.env.num_reward)
+            actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real))[:,update_index].mean()
+            # print(actor_loss)
+            actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         elif self.args.actor_loss_type=='random':
-            update_index_sampling_prob= F.softmin((self.critic_network(inputs_norm_tensor, actions_real)).mean(axis=0)/self.args.softmax_temperature, dim=0).detach().cpu().numpy()
+            update_index_sampling_prob= F.softmin((self.critic_network(inputs_norm_tensor, actions_real)).mean(axis=0)\
+             /self.args.softmax_temperature, dim=0).detach().cpu().numpy()
             
             update_index = np.random.choice(self.env.num_reward, p= update_index_sampling_prob)
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real))[:,update_index].mean()
-            # print(actor_loss)
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         
         # start to update the network
