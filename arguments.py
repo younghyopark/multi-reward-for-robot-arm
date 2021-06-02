@@ -40,6 +40,7 @@ def get_args():
     parser.add_argument('--actor-loss-type','-acloss', type=str, default='default', help='the environment name')
     parser.add_argument('--softmax-temperature','-temp', type=float, default=1, help='the environment name')
     parser.add_argument('--optimizer-type', type=str, default='adam', help='the environment name')
+    parser.add_argument('--scale-rewards', action='store_true', help='if use gpu do the acceleration')
     # parser.add_argument('--ddpg_vq_version','-ver', type=str, default='ver1', help='the environment name')
     args = parser.parse_args()
 

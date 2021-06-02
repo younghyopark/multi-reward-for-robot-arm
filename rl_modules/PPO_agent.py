@@ -16,7 +16,7 @@ import torch.nn.functional as F
 ddpg with HER (MPI-version)
 
 """
-class ddpg_agent:
+class ppo_agent:
     def __init__(self, args, env, env_params):
         self.args = args
         self.env = env
@@ -53,8 +53,6 @@ class ddpg_agent:
         # create the normalizer
         self.o_norm = normalizer(size=env_params['obs'], default_clip_range=self.args.clip_range)
         self.g_norm = normalizer(size=env_params['goal'], default_clip_range=self.args.clip_range)
-        self.scales = []
-
         # create the dict for store the model
         if MPI.COMM_WORLD.Get_rank() == 0:
             if not os.path.exists(self.args.save_dir):
@@ -75,16 +73,6 @@ class ddpg_agent:
         train the network
 
         """
-        print('currently evaluating the initialized network and calculating the reward scale')
-
-        _, reward_components = self._eval_agent()
-        reward_scales = []
-        for i in range(self.env.num_reward):
-            reward_scales.append(reward_components[i])
-        reward_scales = np.abs(np.array(reward_scales))
-        self.reward_scales = reward_scales
-        print(reward_scales)
-
         # start to collect samples
         for epoch in trange(self.args.n_epochs):
             updated_index_histogram = np.zeros(self.env.num_reward)
@@ -134,8 +122,7 @@ class ddpg_agent:
                 for _ in range(self.args.n_batches):
                     # train the network
                     updated_index = self._update_network()
-                    if self.args.actor_loss_type not in ['default','min']:
-                        updated_index_histogram[int(updated_index)]+=1
+                    updated_index_histogram[int(updated_index)]+=1
                 # soft update
                 self._soft_update_target_network(self.actor_target_network, self.actor_network)
                 self._soft_update_target_network(self.critic_target_network, self.critic_network)
@@ -150,8 +137,6 @@ class ddpg_agent:
 
                 for i in range(self.env.num_reward):
                     self.writer.add_scalar('rewards/number_{}'.format(i), reward_components[i],epoch)
-                    if self.args.scale_rewards:
-                        self.writer.add_scalar('scaled_rewards/number_{}'.format(i), reward_components[i]/self.reward_scales[i],epoch)
                     self.writer.add_scalar('update_ratio_per_reward/number_{}'.format(i), updated_index_histogram[i]/updated_index_histogram.sum(),epoch)
 
 
@@ -239,15 +224,12 @@ class ddpg_agent:
         inputs_next_norm_tensor = torch.tensor(inputs_next_norm, dtype=torch.float32)
         actions_tensor = torch.tensor(transitions['actions'], dtype=torch.float32)
         r_tensor = torch.tensor(transitions['r'], dtype=torch.float32).reshape(transitions['r'].shape[0],-1)
-        if self.args.scale_rewards:
-            r_tensor = r_tensor/self.reward_scales
 #         print(r_tensor.shape)
         if self.args.cuda:
             inputs_norm_tensor = inputs_norm_tensor.cuda()
             inputs_next_norm_tensor = inputs_next_norm_tensor.cuda()
             actions_tensor = actions_tensor.cuda()
             r_tensor = r_tensor.cuda()
-
         # calculate the target Q value function
         with torch.no_grad():
             # do the normalization
@@ -268,23 +250,34 @@ class ddpg_agent:
         # else:
         real_q_value = self.critic_network(inputs_norm_tensor, actions_tensor)
 
+        # print('target_q_value :', target_q_value.shape)
+        # print('real_q_value :', real_q_value.shape)
+        # print((target_q_value - real_q_value).shape)
+        # print(( (target_q_value - real_q_value).pow(2)).shape)
+        # print((target_q_value - real_q_value).pow(2).mean().shape)
         if self.args.critic_loss_type=='MSE':
             critic_loss = (target_q_value - real_q_value).pow(2).mean()
+        # elif self.args.critic_loss_type=='max':
+        #     critic_loss, _ = torch.max((target_q_value - real_q_value).pow(2),dim=1)
+        #     critic_loss = torch.mean(critic_loss)
         elif self.args.critic_loss_type=='MAE':
             critic_loss = (target_q_value - real_q_value).abs().mean()
 
+            # print(critic_loss.shape)
+            # .mean()
+
+#         print('critic_loss :',critic_loss.shape)
+        # the actor loss
         actions_real = self.actor_network(inputs_norm_tensor)
 
         if self.args.actor_loss_type=='default':
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real)).mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
-            update_index = None
         elif self.args.actor_loss_type=='min':
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real)).min(axis=1)[0].mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
-            update_index = None
         elif self.args.actor_loss_type=='batch_min':
-            update_index = np.argmin((self.critic_network(inputs_norm_tensor, actions_real)).detach().cpu().numpy().mean(axis=0))
+            update_index = np.argmin((self.critic_network(inputs_norm_tensor, actions_real)).mean(axis=0))
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real))[:,update_index].mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         elif self.args.actor_loss_type=='softmin':
