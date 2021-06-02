@@ -299,7 +299,7 @@ class ddpg_agent:
             # print(actor_loss)
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
         elif self.args.actor_loss_type=='random':
-            update_index_sampling_prob= F.softmin((self.critic_network(inputs_norm_tensor, actions_real)).mean(axis=0)\
+            update_index_sampling_prob= F.softmin((self.critic_network(inputs_norm_tensor, actions_real).detach().cpu().numpy().mean(axis=0))\
              /(self.args.softmax_temperature*self.reward_scales), dim=0).detach().cpu().numpy()
             
             update_index = np.random.choice(self.env.num_reward, p= update_index_sampling_prob)
