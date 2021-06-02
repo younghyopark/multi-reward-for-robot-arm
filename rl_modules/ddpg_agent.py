@@ -283,7 +283,7 @@ class ddpg_agent:
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
             update_index = None
         elif self.args.actor_loss_type=='min':
-            actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real)).min(axis=1)[0].mean()
+            actor_loss = -((self.critic_network(inputs_norm_tensor, actions_real)).detach().cpu().numpy()/self.reward_scales).min(axis=1)[0].mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
             update_index = None
         elif self.args.actor_loss_type=='batch_min':
