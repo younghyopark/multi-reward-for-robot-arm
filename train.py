@@ -4,6 +4,7 @@ import os, sys
 from arguments import get_args
 from mpi4py import MPI
 from rl_modules.ddpg_agent import ddpg_agent
+from rl_modules.ddpg_agent_mgda import ddpg_agent as ddpg_agent_mgda
 import random
 import torch
 
@@ -41,7 +42,10 @@ def launch(args):
     # get the environment parameters
     env_params = get_env_params(env, args)
     # create the ddpg agent to interact with the environment 
-    ddpg_trainer = ddpg_agent(args, env, env_params)
+    if args.actor_loss_type=='mgda':
+        ddpg_trainer = ddpg_agent_mgda(args, env, env_params)
+    else:
+        ddpg_trainer = ddpg_agent(args, env, env_params)
     ddpg_trainer.learn()
 
 if __name__ == '__main__':
@@ -51,4 +55,5 @@ if __name__ == '__main__':
     os.environ['IN_MPI'] = '1'
     # get the params
     args = get_args()
+
     launch(args)

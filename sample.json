@@ -1,13 +1,23 @@
-import argparse
-
-"""
-Here are the param for the training
-
-"""
-
-def get_args():
-    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
-    # the environment setting
+{
+    "optimizer": "Adam", 
+    // "batch_size": 256,
+    "lr": 0.0005,
+    "dataset": "mnist",
+    "tasks": ["L","R"],
+    "normalization_type": "loss+",
+    "algorithm": "mgda",
+    "use_approximation": false,
+    "scales": {"L":0.5, "R":0.5},
+    "parallel": true,
+    "env_name": "FetchPickAndPlaceMulti-v1",
+    "n_epochs": 50,
+    "n_cycles": 50,
+    "n_batches": 40,
+    "save_interval": 5,
+    "seed": 123,
+    "num_workers": 1,
+    "replay_strategy": "future",
+    "clip_return": 50,
     parser.add_argument('--env-name', type=str, default='FetchReach-v1', help='the environment name')
     parser.add_argument('--n-epochs', type=int, default=50, help='the number of epochs to train the agent')
     parser.add_argument('--n-cycles', type=int, default=50, help='the times to collect samples per epoch')
@@ -43,6 +53,4 @@ def get_args():
     parser.add_argument('--scale-rewards', action='store_true', help='if use gpu do the acceleration')
     # parser.add_argument('--ddpg_vq_version','-ver', type=str, default='ver1', help='the environment name')
     parser.add_argument('--normalization-type', type=str, default='loss+', help='the environment name')
-    args = parser.parse_args()
-
-    return args
+}

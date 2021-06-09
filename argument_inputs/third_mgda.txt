@@ -1,0 +1,10 @@
+-acloss
+mgda
+--run-name=third_mgda.txt
+--cuda
+--n-epochs=50
+--env-name=FetchPickAndPlaceMulti-v1
+--lr-actor
+0.0001
+--action-l2
+0.1

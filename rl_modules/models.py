@@ -85,3 +85,50 @@ class critic(nn.Module):
     #     # x = self.out_fc3(x)
 
     #     return x
+
+
+class base_critic(nn.Module):
+    def __init__(self, env_params):
+        super(critic, self).__init__()
+        self.max_action = env_params['action_max']
+        self.num_reward = env_params['num_reward']
+        self.fc1 = nn.Linear(env_params['obs'] + env_params['goal'] + env_params['action'], 256)
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, 256)
+        self.intermediate_q_out = nn.Linear(256, 50)
+        # self.softmin = nn.Softmin(dim=1)
+        # self.temp = env_params['temp']
+
+    def forward(self, x, actions):
+        x = torch.cat([x, actions / self.max_action], dim=1)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = F.relu(self.intermediate_q_out(x))
+
+        return x
+
+
+
+
+class end_critic(nn.Module):
+    def __init__(self, env_params):
+        super(critic, self).__init__()
+        self.max_action = env_params['action_max']
+        self.num_reward = env_params['num_reward']
+        self.fc1 = nn.Linear(50, 50)
+        self.fc2 = nn.Linear(50, 1)
+        # self.fc3 = nn.Linear(256, 256)
+        # self.intermediate_q_out = nn.Linear(256, self.num_reward)
+        # self.softmin = nn.Softmin(dim=1)
+        # self.temp = env_params['temp']
+
+    def forward(self, x, actions):
+        # x = torch.cat([x, actions / self.max_action], dim=1)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        # x = F.relu(self.fc3(x))
+        # x = self.intermediate_q_out(x)
+
+        return x
+

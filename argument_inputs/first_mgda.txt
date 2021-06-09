@@ -1,0 +1,6 @@
+-acloss
+mgda
+--run-name=first_mgda.txt
+--cuda
+--n-epochs=50
+--env-name=FetchPickAndPlaceMulti-v1
