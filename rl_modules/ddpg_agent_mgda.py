@@ -139,13 +139,14 @@ class ddpg_agent:
                 self._update_normalizer([mb_obs, mb_ag, mb_g, mb_actions])
                 for _ in range(self.args.n_batches):
                     # train the network
-                    acloss, crloss = self._update_network()
+                    acloss, each_acloss, crloss = self._update_network()
                 # soft update
-                if MPI.COMM_WORLD.Get_rank() == 0:
-                    for i in range(self.env.num_reward):
-                        self.writer.add_scalar('training_curve_for_each_rewards/number_{}'.format(i), acloss[i],iterations)
-                    self.writer.add_scalar('training_curve_for_critic_network', crloss,iterations)
-                    iterations+=1
+                    if MPI.COMM_WORLD.Get_rank() == 0:
+                        for i in range(self.env.num_reward):
+                            self.writer.add_scalar('training_curve_for_each_rewards/number_{}'.format(i), each_acloss[i],iterations)
+                        self.writer.add_scalar('training_curve_for_critic_network', crloss,iterations)
+                        self.writer.add_scalar('training_curve_for_actor_network', acloss,iterations)
+                        iterations+=1
                 self._soft_update_target_network(self.actor_target_network, self.actor_network)
                 self._soft_update_target_network(self.critic_target_network, self.critic_network)
             # start to do the evaluation
@@ -340,10 +341,10 @@ class ddpg_agent:
         actions_real.detach_()
         # Normalize all gradients, this is optional and not included in the paper.
         # print(grads)
-        gn = gradient_normalizers(grads, loss_data, self.args.normalization_type)
-        for t in tasks:
-            for gr_i in range(len(grads[t])):
-                grads[t][gr_i] = grads[t][gr_i] / gn[t]
+        # gn = gradient_normalizers(grads, loss_data, self.args.normalization_type)
+        # for t in tasks:
+        #     for gr_i in range(len(grads[t])):
+        #         grads[t][gr_i] = grads[t][gr_i] / gn[t]
 
             # Frank-Wolfe iteration to compute scales.
         sol, min_norm = MinNormSolver.find_min_norm_element([grads[t] for t in tasks])
@@ -356,10 +357,12 @@ class ddpg_agent:
 
         self.actor_optim.zero_grad()
         # rep, _ = model['rep'](images, mask)
+        each_loss = []
         for i, t in enumerate(tasks):
             loss_t = -(self.critic_network(inputs_norm_tensor, actions_real))[:,i].mean()
             # print(loss_t)
             loss_t += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
+            each_loss.append(loss_t)
             loss_data[t] = loss_t.data.item()
             if i > 0:
                 loss = loss + scale[t]*loss_t
@@ -407,7 +410,7 @@ class ddpg_agent:
         sync_grads(self.critic_network)
         self.critic_optim.step()
 
-        return -(self.critic_network(inputs_norm_tensor, actions_real)).mean(axis=0), critic_loss
+        return loss, each_loss, critic_loss
     
     # do the evaluation
     def _eval_agent(self):

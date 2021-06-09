@@ -1,0 +1,12 @@
+-acloss
+mgda
+--run-name=fourth_mgda_revised_adam_3
+--cuda
+--n-epochs=50
+--env-name=FetchPickAndPlaceMulti-v1
+--lr-actor
+0.0005
+--action-l2
+1
+--optimizer-type
+adam
