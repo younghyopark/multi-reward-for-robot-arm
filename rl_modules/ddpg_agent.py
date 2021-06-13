@@ -290,11 +290,11 @@ class ddpg_agent:
         if self.args.actor_loss_type=='sum':
             actor_loss = -(self.critic_network(inputs_norm_tensor, actions_real)).mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
-            update_index = None
+            update_index = 0
         elif self.args.actor_loss_type=='smoothed_minmax':
             actor_loss = torch.exp((self.args.softmax_temperature)*(-(self.critic_network(inputs_norm_tensor, actions_real)))).mean()
             actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
-            update_index = None
+            update_index = 0
         # elif self.args.actor_loss_type=='smoothed_minmax':
         #     actor_loss = torch.exp((self.args.softmax_temperature)*(-(self.critic_network(inputs_norm_tensor, actions_real)))).mean()
         #     actor_loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
