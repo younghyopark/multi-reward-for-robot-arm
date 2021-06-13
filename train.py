@@ -32,7 +32,7 @@ def get_env_params(env, args):
     params['max_timesteps'] = env._max_episode_steps
     return params
 
-@email_sender(recipient_emails=["notify.younghyopark@gmail.com"])
+@email_sender(recipient_emails=["notify.younghyopark@gmail.com"], sender_emails=["notify.younghyopark@gmail.com"])
 def launch(args):
     # create the ddpg_agent
     env = gym.make('gym_multiRL:MultiRL{}'.format(args.env_name))
