@@ -13,7 +13,7 @@ from tensorboardX import SummaryWriter
 import torch.nn.functional as F
 from torch.autograd import Variable
 from mgda_modules.min_norm_solvers import MinNormSolver, gradient_normalizers
-from rl_modules.model_loader import get_actor_model
+from rl_modules.model_loader import get_actor_model as get_actor
 
 """
 ddpg with HER (MPI-version)
@@ -25,38 +25,51 @@ class ddpg_agent:
         self.env = env
         self.env_params = env_params
         # create the network
-        self.actor_network = actor(env_params)
+        self.actor_network = get_actor(args,env_params)
         self.critic_network = critic(env_params)
         # sync the networks across the cpus
-        sync_networks(self.actor_network)
+        for i in range(env_params['num_reward']):
+            sync_networks(self.actor_network[i])
+        sync_networks(self.actor_network['rep'])
         sync_networks(self.critic_network)
         # build up the target network
-        self.actor_target_network = actor(env_params)
+        self.actor_target_network = get_actor(args,env_params)
         self.critic_target_network = critic(env_params)
         # load the weights into the target networks
-        self.actor_target_network.load_state_dict(self.actor_network.state_dict())
+        for i in range(env_params['num_reward']):
+            self.actor_target_network[i].load_state_dict(self.actor_network[i].state_dict())
+        self.actor_target_network['rep'].load_state_dict(self.actor_network['rep'].state_dict())
         self.critic_target_network.load_state_dict(self.critic_network.state_dict())
         # if use gpu
         if self.args.cuda:
-            self.actor_network.cuda()
+            # self.actor_network.cuda()
             self.critic_network.cuda()
-            self.actor_target_network.cuda()
+            # self.actor_target_network.cuda()
             self.critic_target_network.cuda()
         # create the optimizer
+
+        self.actor_network_params = []
+        for m in self.actor_network:
+            self.actor_network_params += self.actor_network[m].parameters()
+        
         if self.args.optimizer_type =='SGD':
-            self.actor_optim = torch.optim.SGD(self.actor_network.parameters(), lr=self.args.lr_actor)
+            self.actor_optim = torch.optim.SGD(self.actor_network_params, lr=self.args.lr_actor)
             self.critic_optim = torch.optim.SGD(self.critic_network.parameters(), lr=self.args.lr_critic)
         elif self.args.optimizer_type =='adam':
-            self.actor_optim = torch.optim.Adam(self.actor_network.parameters(), lr=self.args.lr_actor)
+            self.actor_optim = torch.optim.Adam(self.actor_network_params, lr=self.args.lr_actor)
             self.critic_optim = torch.optim.Adam(self.critic_network.parameters(), lr=self.args.lr_critic)
         # her sampler
         self.her_module = her_sampler(self.args.replay_strategy, self.args.replay_k, self.env.compute_reward)
         # create the replay buffer
-        self.buffer = replay_buffer(self.env_params, self.args.buffer_size, self.her_module.sample_her_transitions)
+        
         # create the normalizer
+        # self.o_norm = {}
+        # self.g_norm = {}
+        # self.buffer = {}
+        # for task in range(env_params['num_reward']):
         self.o_norm = normalizer(size=env_params['obs'], default_clip_range=self.args.clip_range)
         self.g_norm = normalizer(size=env_params['goal'], default_clip_range=self.args.clip_range)
-        self.scales = []
+        self.buffer = replay_buffer(self.env_params, self.args.buffer_size, self.her_module.sample_her_transitions)
 
         # create the dict for store the model
         if MPI.COMM_WORLD.Get_rank() == 0:
@@ -89,7 +102,7 @@ class ddpg_agent:
                 reward_scales.append(1)
         reward_scales = np.abs(np.array(reward_scales))
         self.reward_scales = reward_scales
-        # print(reward_scales)
+        print(reward_scales)
 
         # start to collect samples
         iterations=0
@@ -110,7 +123,8 @@ class ddpg_agent:
                     for t in range(self.env_params['max_timesteps']):
                         with torch.no_grad():
                             input_tensor = self._preproc_inputs(obs, g)
-                            pi = self.actor_network(input_tensor)
+                            rep = self.actor_network['rep'](input_tensor)
+                            pi = self.actor_network[0](rep)
                             action = self._select_actions(pi)
                         # feed the actions into the environment
                         observation_new, _, _, info = self.env.step(action)
@@ -140,17 +154,15 @@ class ddpg_agent:
                 self._update_normalizer([mb_obs, mb_ag, mb_g, mb_actions])
                 for _ in range(self.args.n_batches):
                     # train the network
-                    acloss, each_acloss, crloss, scale = self._update_network()
+                    acloss, each_acloss, crloss = self._update_network()
                 # soft update
                     if MPI.COMM_WORLD.Get_rank() == 0:
                         for i in range(self.env.num_reward):
                             self.writer.add_scalar('training_curve_for_each_rewards/number_{}'.format(i), each_acloss[i],iterations)
-                            self.writer.add_scalar('gradient_scales_min_norm_solution/number_{}'.format(i), scale[i],iterations)
                         self.writer.add_scalar('training_curve_for_critic_network', crloss,iterations)
                         self.writer.add_scalar('training_curve_for_actor_network', acloss,iterations)
                         iterations+=1
-                        # print(iterations)
-                self._soft_update_target_network(self.actor_target_network, self.actor_network)
+                self._soft_update_target_network_for_actor(self.actor_target_network, self.actor_network)
                 self._soft_update_target_network(self.critic_target_network, self.critic_network)
             # start to do the evaluation
             success_rate, reward_components = self._eval_agent()
@@ -232,10 +244,17 @@ class ddpg_agent:
         for target_param, param in zip(target.parameters(), source.parameters()):
             target_param.data.copy_((1 - self.args.polyak) * param.data + self.args.polyak * target_param.data)
 
+    def _soft_update_target_network_for_actor(self, target, source):
+        for target_param, param in zip(target['rep'].parameters(), source['rep'].parameters()):
+            target_param.data.copy_((1 - self.args.polyak) * param.data + self.args.polyak * target_param.data)
+        for t in range(self.env.num_reward):
+            for target_param, param in zip(target[t].parameters(), source[t].parameters()):
+                target_param.data.copy_((1 - self.args.polyak) * param.data + self.args.polyak * target_param.data)
+
+
     # update the network
     def _update_network(self):
         # sample the episodes
-        # print('sampling transition')
         transitions = self.buffer.sample(self.args.batch_size)
         # pre-process the observation and goal
         o, o_next, g = transitions['obs'], transitions['obs_next'], transitions['g']
@@ -266,7 +285,8 @@ class ddpg_agent:
         with torch.no_grad():
             # do the normalization
             # concatenate the stuffs
-            actions_next = self.actor_target_network(inputs_next_norm_tensor)
+            rep = self.actor_target_network['rep'](inputs_next_norm_tensor)
+            actions_next = self.actor_target_network[0](rep)
             q_next_value = self.critic_target_network(inputs_next_norm_tensor, actions_next)
             q_next_value = q_next_value.detach()
             # print('r_tensor_shape :', r_tensor.shape)
@@ -326,23 +346,24 @@ class ddpg_agent:
         masks = {}
                 
         for t_num, t in enumerate(tasks):
-            # print('compute gradients of each loss function wrt parameters',t_num)
             # Comptue gradients of each loss function wrt parameters
             self.actor_optim.zero_grad()
             # rep, mask = model['rep'](images, mask)
             # out_t, masks[t] = model[t](rep, None)
             # loss = loss_fn[t](out_t, labels[t])
-            actions_real = self.actor_network(inputs_norm_tensor)
+            rep = self.actor_network['rep'](inputs_norm_tensor)
+            actions_real = self.actor_network[t_num](rep)
             loss = -(self.critic_network(inputs_norm_tensor, actions_real))[:,t_num].mean()
-            # loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
+            loss += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
             # print(loss)
             loss_data[t] = loss.data.item()
             loss.backward()
             grads[t] = []
-            for param in self.actor_network.parameters():
+            for param in self.actor_network['rep'].parameters():
                 if param.grad is not None:
                     # with torch.no_grad:
                     grads[t].append(Variable(param.grad.data.clone(), requires_grad=False))
+        rep.detach_()
         actions_real.detach_()
         # Normalize all gradients, this is optional and not included in the paper.
         # print(grads)
@@ -363,16 +384,18 @@ class ddpg_agent:
         self.actor_optim.zero_grad()
         # rep, _ = model['rep'](images, mask)
         each_loss = []
+        rep = self.actor_network['rep'](inputs_norm_tensor)
         for i, t in enumerate(tasks):
+            actions_real = self.actor_network[t_num](rep)
             loss_t = -(self.critic_network(inputs_norm_tensor, actions_real))[:,i].mean()
             # print(loss_t)
-            # loss_t += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
+            loss_t += self.args.action_l2 * (actions_real / self.env_params['action_max']).pow(2).mean()
             each_loss.append(loss_t)
             loss_data[t] = loss_t.data.item()
             if i > 0:
                 loss = loss + scale[t]*loss_t
             else:
-                loss = +scale[t]*loss_t
+                loss = scale[t]*loss_t
         loss.backward()
         self.actor_optim.step()
         # print(actions_real)
@@ -415,7 +438,7 @@ class ddpg_agent:
         sync_grads(self.critic_network)
         self.critic_optim.step()
 
-        return loss, each_loss, critic_loss, scale
+        return loss, each_loss, critic_loss,scale
     
     # do the evaluation
     def _eval_agent(self):
@@ -436,7 +459,8 @@ class ddpg_agent:
             for _ in range(self.env_params['max_timesteps']):
                 with torch.no_grad():
                     input_tensor = self._preproc_inputs(obs, g)
-                    pi = self.actor_network(input_tensor)
+                    rep = self.actor_network['rep'](input_tensor)
+                    pi = self.actor_network[0](rep)
                     # convert the actions
                     actions = pi.detach().cpu().numpy().squeeze()
                 observation_new, reward_new, _, info = self.env.step(actions)

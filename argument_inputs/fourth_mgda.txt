@@ -1,11 +1,11 @@
 -acloss
-mgda
---run-name=fourth_mgda_revised_adam_3
+default
+--run-name=sparse_baseline
 --cuda
 --n-epochs=50
---env-name=FetchPickAndPlaceMulti-v1
+--env-name=FetchPickAndPlace-v1
 --lr-actor
-0.0005
+0.001
 --action-l2
 1
 --optimizer-type

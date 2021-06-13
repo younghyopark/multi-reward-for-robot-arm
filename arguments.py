@@ -8,7 +8,7 @@ Here are the param for the training
 def get_args():
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
     # the environment setting
-    parser.add_argument('--env-name', type=str, default='FetchReach-v1', help='the environment name')
+    parser.add_argument('--env-name', type=str, default='FetchPickAndPlace-v1', help='the environment name')
     parser.add_argument('--n-epochs', type=int, default=50, help='the number of epochs to train the agent')
     parser.add_argument('--n-cycles', type=int, default=50, help='the times to collect samples per epoch')
     parser.add_argument('--n-batches', type=int, default=40, help='the times to update the network')
@@ -34,7 +34,7 @@ def get_args():
     parser.add_argument('--demo-length', type=int, default=20, help='the demo length')
     parser.add_argument('--cuda', action='store_true', help='if use gpu do the acceleration')
     parser.add_argument('--num-rollouts-per-mpi', type=int, default=2, help='the rollouts per mpi')
-    parser.add_argument('--run-name', type=str, default=None, help='the environment name')
+    parser.add_argument('--run-name', type=str, default='default3', help='the environment name')
     parser.add_argument('--demo-epoch', type=int, default=0, help='the environment name')
     parser.add_argument('--critic-loss-type','-crloss', type=str, default='MSE', help='the environment name')
     parser.add_argument('--actor-loss-type','-acloss', type=str, default='default', help='the environment name')
@@ -42,7 +42,7 @@ def get_args():
     parser.add_argument('--optimizer-type', type=str, default='adam', help='the environment name')
     parser.add_argument('--scale-rewards', action='store_true', help='if use gpu do the acceleration')
     # parser.add_argument('--ddpg_vq_version','-ver', type=str, default='ver1', help='the environment name')
-    parser.add_argument('--normalization-type', type=str, default='loss+', help='the environment name')
+    parser.add_argument('--normalization-type', type=str, default='l2', help='the environment name')
     args = parser.parse_args()
 
     return args

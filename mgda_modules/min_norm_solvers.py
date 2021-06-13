@@ -205,6 +205,7 @@ class MinNormSolver:
             new_sol_vec[t_iter] += 1 - nc
 
             change = new_sol_vec - sol_vec
+            print(change)
             if np.sum(np.abs(change)) < MinNormSolver.STOP_CRIT:
                 return sol_vec, nd
             sol_vec = new_sol_vec
